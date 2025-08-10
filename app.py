@@ -69,7 +69,7 @@ def process_data(df, person_under_control):
         patient_data['I. Liquidado'] = pd.to_numeric(patient_data['I. Liquidado'].astype(str).str.replace(',', '.'), errors='ignore')
         patient_data.dropna(subset=['I. Liquidado'], inplace=True)
         
-        # Sort the patient data by date
+        # Sort the patient data by date, which correctly orders by year > month > day
         patient_data.sort_values(by='F. Actividad', inplace=True)
 
         # Calculate the total money for the patient
@@ -90,11 +90,11 @@ def process_data(df, person_under_control):
             st.markdown(f"**Modality: {modality}**")
             modality_data = patient_data[patient_data['Producto'] == modality].copy()
             
-            # Sort the modality data by date
+            # Sort the modality data by date, which correctly orders by year > month > day
             modality_data.sort_values(by='F. Actividad', inplace=True)
             
             # Money per day (summing values for the same date)
-            money_per_day = modality_data.groupby(modality_data['F. Actividad'].dt.strftime('%d-%m-%y'))['I. Liquidado'].sum()
+            money_per_day = modality_data.groupby('F. Actividad')['I. Liquidado'].sum()
             
             # Find the most common payment value
             most_common_value = None
@@ -108,29 +108,30 @@ def process_data(df, person_under_control):
             if most_common_value is not None:
                 weird_dates_payments = money_per_day[money_per_day != most_common_value]
             
-            cross_file_dates_group = modality_data.groupby(modality_data['F. Actividad'].dt.strftime('%d-%m-%y'))['source_file'].nunique()
+            cross_file_dates_group = modality_data.groupby('F. Actividad')['source_file'].nunique()
             cross_file_dates = cross_file_dates_group[cross_file_dates_group > 1]
             
-            # Combine all weird dates
-            all_weird_dates = weird_dates_payments.index.union(cross_file_dates.index)
+            # Combine all weird dates and sort them chronologically
+            all_weird_dates_dt = weird_dates_payments.index.union(cross_file_dates.index).sort_values()
             
-            if not all_weird_dates.empty:
+            if not all_weird_dates_dt.empty:
                 st.markdown(f"**⚠️ Unusual Payments and Cross-File Dates for {modality}:**")
-                for date in all_weird_dates:
-                    money = money_per_day.get(date, 'N/A')
-                    source_files_count = cross_file_dates.get(date, 0)
+                for date_dt in all_weird_dates_dt:
+                    date_str = date_dt.strftime('%d-%m-%y')
+                    money = money_per_day.get(date_dt, 'N/A')
+                    source_files_count = cross_file_dates.get(date_dt, 0)
                     
                     if source_files_count > 1:
-                        st.write(f"  - **{date}**: €{money:,.2f} (from multiple files)")
+                        st.write(f"  - **{date_str}**: €{money:,.2f} (from multiple files)")
                     else:
-                        st.write(f"  - **{date}**: €{money:,.2f} (unusual payment)")
+                        st.write(f"  - **{date_str}**: €{money:,.2f} (unusual payment)")
 
             # Number of days
             days_count = modality_data['F. Actividad'].nunique()
             st.write(f"• **Days in modality**: {days_count}")
 
-            # List the days and money
-            dates_with_money = [f"{date} (€{money:,.2f})" for date, money in money_per_day.items()]
+            # List the days and money, correctly sorted
+            dates_with_money = [f"{date.strftime('%d-%m-%y')} (€{money:,.2f})" for date, money in money_per_day.items()]
             st.write(f"• **Dates and Money**: {', '.join(dates_with_money)}")
             
             # Total money for this modality
@@ -139,8 +140,23 @@ def process_data(df, person_under_control):
             st.markdown("---")
 
 def main():
-    # Set the page configuration to use a wide layout, which expands the sidebar
+    # Set the page configuration to use a wide layout
     st.set_page_config(layout="wide")
+
+    # This is the parameter you can change to adjust the sidebar width
+    sidebar_width = 500  # Change this value to adjust the width in pixels
+
+    # Use custom CSS to make the sidebar wider with the user-specified value
+    st.markdown(
+        f"""
+        <style>
+        [data-testid="stSidebar"] {{
+            width: {sidebar_width}px;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
     st.title('Patient Payment Data Analysis App')
     st.markdown("Upload your Excel files to analyze patient data")
@@ -156,6 +172,7 @@ def main():
     3. **Haz clic en "Clear Data":** Si necesitas borrar los datos y empezar de nuevo, usa este botón.
     
     4. **Analiza los resultados:** La aplicación procesará los datos y mostrará un informe por cada paciente, incluyendo el total de dinero, los días que faltan y los pagos inusuales.
+    
     
     Con cariño,
     Diego ❤️
